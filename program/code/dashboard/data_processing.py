@@ -64,11 +64,12 @@ def process_HTOL_data(HTOL_name, outlier_tolerance, grouping_time_window, anomal
                 with open(cache_file, 'rb') as f:
                     df, grouped_alerts_indices, event_date = pickle.load(f)
             else:
+                df, grouped_alerts_indices, event_date = process_file(file_path, outlier_tolerance, grouping_time_window, anomaly_threshold)
+
                 if not all(col in df.columns for col in ['ChlPrs']):
                     print(f"Skipping file {file_name} due to missing columns.")
                     continue  # Skip this file
 
-                df, grouped_alerts_indices, event_date = process_file(file_path, outlier_tolerance, grouping_time_window, anomaly_threshold)
                 with open(cache_file, 'wb') as f:
                     pickle.dump((df, grouped_alerts_indices, event_date), f)
 
