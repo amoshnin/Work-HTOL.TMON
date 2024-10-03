@@ -19,7 +19,13 @@ def process_file(file_path, outlier_tolerance, grouping_time_window, anomaly_thr
     event_date = extract_date(first_row)
 
     # Read the CSV, skipping the first 3 rows (including the header with the event date)
-    df = pd.read_csv(file_path, skiprows=3)[['Time', chiller_pressure_title]]
+    df = pd.read_csv(file_path, skiprows=3)
+
+    if not all(col in df.columns for col in [chiller_pressure_title]):
+        print(f"Skipping file {file_path} due to missing columns.")
+        return None, None, None
+    else:
+        df = df[['Time', chiller_pressure_title]]
 
     # Convert the 'Time' column to datetime, assuming it contains only time information
     df['Time'] = pd.to_datetime(df['Time'], format='%H:%M:%S').dt.time
@@ -66,9 +72,8 @@ def process_HTOL_data(HTOL_name, outlier_tolerance, grouping_time_window, anomal
             else:
                 df, grouped_alerts_indices, event_date = process_file(file_path, outlier_tolerance, grouping_time_window, anomaly_threshold)
 
-                if not all(col in df.columns for col in ['ChlPrs']):
-                    print(f"Skipping file {file_name} due to missing columns.")
-                    continue  # Skip this file
+                if df is None or grouped_alerts_indices is None or event_date is None:
+                    continue
 
                 with open(cache_file, 'wb') as f:
                     pickle.dump((df, grouped_alerts_indices, event_date), f)
