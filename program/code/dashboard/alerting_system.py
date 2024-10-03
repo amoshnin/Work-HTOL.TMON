@@ -1,4 +1,6 @@
 import streamlit as st
+import pandas as pd
+import os
 from data_processing import process_HTOL_data
 from visualization import visualise_time_series
 from constants import chiller_pressure_title, idle_bands, run_bands
@@ -25,6 +27,80 @@ def graph_button_title(button_key, severity):
 
 def graph_visible_title(HTOL_name, severity):
     return f"graph_visible_{HTOL_name}_{severity}"
+
+def save_alert_data_to_csv(alert_data, HTOL_name, outlier_tolerance, grouping_time_window, anomaly_threshold, start_datetime, end_datetime):
+    """
+    Saves the alert data for a specific HTOL machine to a CSV file,
+    including all rows from the original data and filling blanks for no alerts.
+    """
+    all_alerts = []
+
+    for file_name, data in alert_data.items():
+        df = data['df']
+        grouped_alerts_indices = data['grouped_alerts_indices']
+
+        # Map severity to "ALERT" column values
+        grouped_alerts_indices['ALERT'] = grouped_alerts_indices['severity'].map({
+            'low': 'LOW',
+            'medium': 'MEDIUM',
+            'high': 'HIGH',
+            '3-sigma': 'SIGMA'
+        })
+
+        # Perform a left join to include all rows from the original DataFrame
+        merged_df = pd.merge(df, grouped_alerts_indices[['alert_index', 'ALERT']], left_index=True, right_on='alert_index', how='left')
+
+        # Add file name
+        merged_df['file_name'] = file_name
+
+        # Fill NaN values in 'ALERT' with blanks
+        merged_df['ALERT'] = merged_df['ALERT'].fillna('')
+
+        all_alerts.append(merged_df)
+
+    # Combine all alerts
+    combined_df = pd.concat(all_alerts)
+
+    # Sort by time
+    combined_df = combined_df.sort_values('Time')
+
+    # Construct a unique folder name based on hyperparameters
+    folder_name = f"outlier_tolerance={outlier_tolerance}_grouping_time_window={grouping_time_window}_anomaly_threshold={anomaly_threshold}_start_date={start_datetime.strftime('%Y-%m-%d')}_end_date={end_datetime.strftime('%Y-%m-%d')}"
+
+    # Create the folder if it doesn't exist
+    if not os.path.exists(folder_name):
+        os.makedirs(folder_name)
+
+    # Save to CSV inside the folder
+    csv_file_name = os.path.join(folder_name, f"{HTOL_name}_alerts.csv")
+    combined_df.to_csv(csv_file_name, index=False)
+
+    print(f"Alert data saved to {csv_file_name}")
+
+# Helper function to get sort key based on selected option and severity
+def get_sort_key(data, severity, sort_option):
+    if sort_option.startswith("Date"):
+        return data['event_date'].timestamp() if sort_option == "Date (Oldest First)" else -data['event_date'].timestamp()
+    else:
+        alert_count = (data['grouped_alerts_indices']['severity'] == severity).sum()
+        return -alert_count if sort_option == "Alert Count (Highest First)" else alert_count
+
+def display_alert_charts(alert_data, severity, sort_by, HTOL_name):
+    """
+    Displays the alert charts for a specific severity type with sorting options.
+    """
+    spinner_text = f"Loading {severity} severity alerts..."
+
+    with st.spinner(spinner_text):
+        filtered_alert_data = {k: v for k, v in alert_data.items() if k.startswith(HTOL_name)}
+
+    for file_name, data in sorted(filtered_alert_data.items(), key=lambda item: get_sort_key(item[1], severity, sort_by)):
+            low_count, medium_count, high_count, sigma_count = compute_alert_counts(data['grouped_alerts_indices'])
+            if (data['grouped_alerts_indices']['severity'] == severity).sum() == 0:
+                continue
+            st.subheader(f"{file_name} (Low: {low_count}, Medium: {medium_count}, High: {high_count}, 3-Sigma: {sigma_count})")
+            alerts_indices = data['grouped_alerts_indices']
+            visualise_time_series(data['df'], chiller_pressure_title, idle_bands, run_bands, alerts_indices, file_name)
 
 def alerting_system(HTOL_name, outlier_tolerance, grouping_time_window, anomaly_threshold, start_datetime, end_datetime):
     alert_counts, alert_data = process_HTOL_data(HTOL_name, outlier_tolerance, grouping_time_window, anomaly_threshold, start_datetime, end_datetime)
@@ -75,31 +151,6 @@ def alerting_system(HTOL_name, outlier_tolerance, grouping_time_window, anomaly_
             if st.button("Toggle Visibility of Graphs", key=f"button_{button_key}"):
                 st.session_state[button_key] = not st.session_state[button_key]
 
-    # Helper function to get sort key based on selected option and severity
-    def get_sort_key(data, severity, sort_option):
-        if sort_option.startswith("Date"):
-            return data['event_date'].timestamp() if sort_option == "Date (Oldest First)" else -data['event_date'].timestamp()
-        else:
-            alert_count = (data['grouped_alerts_indices']['severity'] == severity).sum()
-            return -alert_count if sort_option == "Alert Count (Highest First)" else alert_count
-
-    def display_alert_charts(alert_data, severity, sort_by, HTOL_name):
-        """
-        Displays the alert charts for a specific severity type with sorting options.
-        """
-        spinner_text = f"Loading {severity} severity alerts..."
-
-        with st.spinner(spinner_text):
-            filtered_alert_data = {k: v for k, v in alert_data.items() if k.startswith(HTOL_name)}
-
-            for file_name, data in sorted(filtered_alert_data.items(), key=lambda item: get_sort_key(item[1], severity, sort_by)):
-                low_count, medium_count, high_count, sigma_count = compute_alert_counts(data['grouped_alerts_indices'])
-                if (data['grouped_alerts_indices']['severity'] == severity).sum() == 0:
-                    continue
-                st.subheader(f"{file_name} (Low: {low_count}, Medium: {medium_count}, High: {high_count}, 3-Sigma: {sigma_count})")
-                alerts_indices = data['grouped_alerts_indices']
-                visualise_time_series(data['df'], chiller_pressure_title, idle_bands, run_bands, alerts_indices, file_name)
-
     with col1:
         severity = "low"
         if st.session_state[graph_visible_title(HTOL_name, severity)]:
@@ -116,5 +167,7 @@ def alerting_system(HTOL_name, outlier_tolerance, grouping_time_window, anomaly_
         severity = "3-sigma"
         if st.session_state[graph_visible_title(HTOL_name, severity)]:
             display_alert_charts(alert_data, severity, sort_by_high, HTOL_name)
+
+    # save_alert_data_to_csv(alert_data, HTOL_name, outlier_tolerance, grouping_time_window, anomaly_threshold, start_datetime, end_datetime)
 
     return alert_data, alert_counts
