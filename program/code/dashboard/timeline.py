@@ -1,12 +1,12 @@
 import pandas as pd
 import streamlit as st
 import plotly.graph_objects as go
-from constants import folders, severities_color_map, chiller_pressure_title, idle_bands, run_bands
+from constants import folders, severities_color_map, idle_bands, run_bands
 import uuid
 from visualization import visualise_time_series
 from streamlit_plotly_events import plotly_events  # Import the component
 
-def timeline(total_data, severity):
+def timeline(total_data, severity, selected_variable):
     all_alerts = []
     alert_point_data = {}  # Initialize dictionary to store alert point datas
 
@@ -52,7 +52,7 @@ def timeline(total_data, severity):
         fig.add_trace(go.Scatter(
             x=[row['Time']],
             y=[f"{row['machine']} "], # (Count: {alert_counts[row['machine']]})
-            text=[row[chiller_pressure_title]],  # Assuming 'ChlPrs' is the sensor value column
+            text=[row[selected_variable]],  # Assuming 'ChlPrs' is the sensor value column
             mode='markers',
             marker=dict(
                 color=severities_color_map.get(row['severity']),
@@ -86,4 +86,4 @@ def timeline(total_data, severity):
         for point in selected_points:
             key = point["x"] + "_" + point["y"].split(" ")[0]
             selected_point_data = alert_point_data[key]
-            visualise_time_series(selected_point_data['df'], chiller_pressure_title, idle_bands, run_bands, selected_point_data['grouped_alerts_indices'], selected_point_data['file_name'])
+            visualise_time_series(selected_point_data['df'], selected_variable, idle_bands, run_bands, selected_point_data['grouped_alerts_indices'], selected_point_data['file_name'])

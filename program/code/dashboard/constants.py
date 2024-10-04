@@ -6,7 +6,6 @@ idle_threshold = 32
 run_threshold = 32
 machine_state = "idle"  # Or get it from your DataFrame if it changes
 
-chiller_pressure_title = "ChlPrs"
 folders = ["HTOL-09", "HTOL-10", "HTOL-11", "HTOL-12", "HTOL-13", "HTOL-14", "HTOL-15"]
 paths = [os.path.join(data_directory, folder_path) for folder_path in folders]
 
