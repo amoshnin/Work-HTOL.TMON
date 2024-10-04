@@ -73,6 +73,7 @@ def process_HTOL_data(HTOL_name, outlier_tolerance, grouping_time_window, anomal
                 df, grouped_alerts_indices, event_date = process_file(file_path, outlier_tolerance, grouping_time_window, anomaly_threshold, selected_variable)
 
                 if df is None or grouped_alerts_indices is None or event_date is None:
+                    total_files = total_files - 1
                     continue
 
                 with open(cache_file, 'wb') as f:
