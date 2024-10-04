@@ -1,6 +1,6 @@
 import os
 
-data_directory = "../"
+data_directory = "./"
 
 idle_threshold = 32
 run_threshold = 32

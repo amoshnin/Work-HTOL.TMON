@@ -1,7 +1,9 @@
-
+import os
+import pandas as pd
 import streamlit as st
 from utils import date_time_range_selection
 from timeline import timeline
+from constants import chiller_pressure_title
 
 st.set_page_config(layout="wide")
 st.title("Alerting System Hyperparameters")
@@ -28,7 +30,7 @@ start_datetime, end_datetime = date_time_range_selection()
 from summary_tab import summary_tab
 # from cache_management import cache_management
 from alerting_system import alerting_system
-from constants import folders
+from constants import paths, folders
 
 # TODO:
 # - have loading/or progression better indicator whenever something is loading
@@ -49,6 +51,15 @@ from constants import folders
 
 aggregated_counts = {'low': 0, 'medium': 0, 'high': 0, '3-sigma': 0}
 total_data = {}
+
+# Load available variables from the first HTOL folder
+htol_folder = "HTOL-09"  # Assuming all HTOL folders have the same data structure
+file_path = os.path.join(htol_folder, os.listdir(htol_folder)[0])
+df = pd.read_csv(file_path, skiprows=3)
+available_variables = df.columns.tolist()
+
+# Dropdown to select variable
+selected_variable = st.selectbox("Select Variable", available_variables, key="select_variable", index=available_variables.index(chiller_pressure_title))
 
 def HTOL_09_content():
     HTOL = "HTOL-09"
