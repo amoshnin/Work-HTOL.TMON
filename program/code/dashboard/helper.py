@@ -4,7 +4,7 @@ import os
 current_script = os.path.basename(__file__)
 
 # Iterate over files in the current directory
-path = ".\program\code\dashboard"
+path = "./program/code/dashboard"
 for filename in os.listdir(path):
     print(filename)
     # Check if it's a .py file and not the current script

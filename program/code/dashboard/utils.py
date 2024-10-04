@@ -2,6 +2,7 @@ import re
 import hashlib
 import pandas as pd
 import streamlit as st
+import json
 from datetime import time, datetime
 
 def extract_date(text):
@@ -11,8 +12,8 @@ def extract_date(text):
     else:
         return None
 
-def hash_hyperparameters(outlier_tolerance, grouping_time_window, anomaly_threshold, selected_variable):
-    combined_str = f"{outlier_tolerance}_{type(outlier_tolerance).__name__}_{grouping_time_window}_{type(grouping_time_window).__name__}_{anomaly_threshold}_{type(anomaly_threshold).__name__}_{selected_variable}_{type(selected_variable).__name__}"
+def hash_hyperparameters(outlier_tolerance, grouping_time_window, anomaly_threshold, selected_variable, bands):
+    combined_str = f"{outlier_tolerance}_{type(outlier_tolerance).__name__}_{grouping_time_window}_{type(grouping_time_window).__name__}_{anomaly_threshold}_{type(anomaly_threshold).__name__}_{selected_variable}_{type(selected_variable).__name__}_{json.dumps(bands)}"
     return hashlib.md5(combined_str.encode()).hexdigest()
 
 def date_time_range_selection():

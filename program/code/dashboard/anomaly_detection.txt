@@ -1,9 +1,8 @@
 import pandas as pd
 import numpy as np
-from constants import chiller_pressure_title
 from constants import machine_state
 
-def group_alerts(df, alerts_indices, grouping_time_window):
+def group_alerts(df, alerts_indices, grouping_time_window, selected_variable):
     """
     Groups alerts based on time proximity.
 
@@ -42,12 +41,12 @@ def group_alerts(df, alerts_indices, grouping_time_window):
             if time_diff <= grouping_time_window:
                 current_group.append(row)
             else:
-                highest_sensor_alert = max(current_group, key=lambda x: df.loc[x['alert_index'], chiller_pressure_title])
+                highest_sensor_alert = max(current_group, key=lambda x: df.loc[x['alert_index'], selected_variable])
                 grouped_alerts.append(highest_sensor_alert)
                 current_group = [row]
 
     if current_group:
-        highest_sensor_alert = max(current_group, key=lambda x: df.loc[x['alert_index'], chiller_pressure_title])
+        highest_sensor_alert = max(current_group, key=lambda x: df.loc[x['alert_index'], selected_variable])
         grouped_alerts.append(highest_sensor_alert)
 
     # Convert the grouped alerts back to a DataFrame
@@ -103,7 +102,7 @@ def detect_sensor_anomalies(df, variable_title, idle_bands, run_bands, outlier_t
 
     return alert_df
 
-def anomaly_detection_3_sigma_rule(data, idle_bands, run_bands, anomaly_threshold):
+def anomaly_detection_3_sigma_rule(data, idle_bands, run_bands, anomaly_threshold, selected_variable):
     """
     Detects anomalies using the 3-sigma rule and filters based on normal operation bands.
 
@@ -118,12 +117,12 @@ def anomaly_detection_3_sigma_rule(data, idle_bands, run_bands, anomaly_threshol
     """
 
     # Calculate mean and standard deviation
-    mean_pressure = np.mean(data[chiller_pressure_title])
-    std_pressure = np.std(data[chiller_pressure_title])
+    mean_pressure = np.mean(data[selected_variable])
+    std_pressure = np.std(data[selected_variable])
 
     # Flag potential anomalies based on 3-sigma rule
-    potential_anomalies = (data[chiller_pressure_title] > mean_pressure + anomaly_threshold * std_pressure) | \
-                          (data[chiller_pressure_title] < mean_pressure - anomaly_threshold * std_pressure)
+    potential_anomalies = (data[selected_variable] > mean_pressure + anomaly_threshold * std_pressure) | \
+                          (data[selected_variable] < mean_pressure - anomaly_threshold * std_pressure)
 
     # Get machine state (assuming it's in the DataFrame, otherwise set it appropriately)
     machine_state = data['machine_state'].iloc[0] if 'machine_state' in data.columns else 'idle'
@@ -131,9 +130,9 @@ def anomaly_detection_3_sigma_rule(data, idle_bands, run_bands, anomaly_threshol
 
     # Filter potential anomalies based on normal operation bands
     is_within_normal_bands = (
-        (data[chiller_pressure_title] >= bands['low'][0]) & (data[chiller_pressure_title] <= bands['low'][1])
+        (data[selected_variable] >= bands['low'][0]) & (data[selected_variable] <= bands['low'][1])
     ) | (
-        (data[chiller_pressure_title] >= bands['low'][2]) & (data[chiller_pressure_title] <= bands['low'][3])
+        (data[selected_variable] >= bands['low'][2]) & (data[selected_variable] <= bands['low'][3])
     )
 
     # Combine conditions to get final anomalies

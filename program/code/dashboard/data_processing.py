@@ -5,14 +5,14 @@ import pandas as pd
 import streamlit as st
 from datetime import datetime
 from anomaly_detection import detect_sensor_anomalies, group_alerts, anomaly_detection_3_sigma_rule
-from constants import idle_bands, run_bands
+from constants import CACHE_DIR
 from utils import extract_date, hash_hyperparameters
 
-CACHE_DIR = '.cache'
+
 os.makedirs(CACHE_DIR, exist_ok=True)
 
 @st.cache_data(show_spinner=False)
-def process_file(file_path, outlier_tolerance, grouping_time_window, anomaly_threshold, selected_variable):
+def process_file(file_path, outlier_tolerance, grouping_time_window, anomaly_threshold, selected_variable, bands):
     # Read the first row to get the event date
     with open(file_path, 'r') as f:
         first_row = f.readline()
@@ -36,8 +36,14 @@ def process_file(file_path, outlier_tolerance, grouping_time_window, anomaly_thr
     else:
         print("Warning: Could not extract event date from the first row.")
 
-    alerts_indices = detect_sensor_anomalies(df, selected_variable, idle_bands, run_bands, outlier_tolerance=outlier_tolerance)
-    three_sigma_alerts = anomaly_detection_3_sigma_rule(df, idle_bands, run_bands, anomaly_threshold, selected_variable)
+    alerts_indices = detect_sensor_anomalies(
+        df,
+        selected_variable,
+        bands["idle_bands"],
+        bands["run_bands"],
+        outlier_tolerance=outlier_tolerance,
+    )
+    three_sigma_alerts = anomaly_detection_3_sigma_rule(df, bands["idle_bands"], bands["run_bands"], anomaly_threshold, selected_variable)
 
     grouped_alerts_indices = group_alerts(df, alerts_indices, grouping_time_window, selected_variable)
     grouped_3_sigma_alerts_indices = group_alerts(df, three_sigma_alerts, grouping_time_window, selected_variable)
@@ -48,11 +54,11 @@ def process_file(file_path, outlier_tolerance, grouping_time_window, anomaly_thr
 
 
 @st.cache_data(show_spinner=False)  # Add caching to this function
-def process_HTOL_data(HTOL_name, outlier_tolerance, grouping_time_window, anomaly_threshold, start_datetime, end_datetime, selected_variable):
+def process_HTOL_data(HTOL_name, outlier_tolerance, grouping_time_window, anomaly_threshold, start_datetime, end_datetime, selected_variable, bands):
     alert_counts = {'low': 0, 'medium': 0, 'high': 0, '3-sigma': 0}
     alert_data = {}
 
-    hyperparameter_hash = hash_hyperparameters(outlier_tolerance, grouping_time_window, anomaly_threshold, selected_variable)
+    hyperparameter_hash = hash_hyperparameters(outlier_tolerance, grouping_time_window, anomaly_threshold, selected_variable, bands)
     cache_subdir = os.path.join(CACHE_DIR, HTOL_name, hyperparameter_hash)
     os.makedirs(cache_subdir, exist_ok=True)
 
@@ -70,7 +76,7 @@ def process_HTOL_data(HTOL_name, outlier_tolerance, grouping_time_window, anomal
                 with open(cache_file, 'rb') as f:
                     df, grouped_alerts_indices, event_date = pickle.load(f)
             else:
-                df, grouped_alerts_indices, event_date = process_file(file_path, outlier_tolerance, grouping_time_window, anomaly_threshold, selected_variable)
+                df, grouped_alerts_indices, event_date = process_file(file_path, outlier_tolerance, grouping_time_window, anomaly_threshold, selected_variable, bands)
 
                 if df is None or grouped_alerts_indices is None or event_date is None:
                     total_files = total_files - 1

@@ -1,12 +1,12 @@
 import pandas as pd
 import streamlit as st
 import plotly.graph_objects as go
-from constants import folders, severities_color_map, idle_bands, run_bands
+from constants import folders, severities_color_map
 import uuid
 from visualization import visualise_time_series
 from streamlit_plotly_events import plotly_events  # Import the component
 
-def timeline(total_data, severity, selected_variable):
+def timeline(total_data, severity, selected_variable, bands):
     all_alerts = []
     alert_point_data = {}  # Initialize dictionary to store alert point datas
 
@@ -86,4 +86,4 @@ def timeline(total_data, severity, selected_variable):
         for point in selected_points:
             key = point["x"] + "_" + point["y"].split(" ")[0]
             selected_point_data = alert_point_data[key]
-            visualise_time_series(selected_point_data['df'], selected_variable, idle_bands, run_bands, selected_point_data['grouped_alerts_indices'], selected_point_data['file_name'])
+            visualise_time_series(selected_point_data['df'], selected_variable, bands["idle_bands"], bands["run_bands"], selected_point_data['grouped_alerts_indices'], selected_point_data['file_name'])

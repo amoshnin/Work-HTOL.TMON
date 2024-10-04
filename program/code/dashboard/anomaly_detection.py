@@ -79,6 +79,7 @@ def detect_sensor_anomalies(df, variable_title, idle_bands, run_bands, outlier_t
     for i, row in df.iterrows():
         value = row[variable_title]
         bands = idle_bands if machine_state == 'idle' else run_bands
+        # print("bands", bands)
 
         # Check if value is outside normal range
         if (bands['low'][0] <= value <= bands['low'][1]) or (bands['low'][2] <= value <= bands['low'][3]):

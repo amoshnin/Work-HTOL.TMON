@@ -3,7 +3,6 @@ import pandas as pd
 import os
 from data_processing import process_HTOL_data
 from visualization import visualise_time_series
-from constants import idle_bands, run_bands
 
 def compute_alert_counts(grouped_alerts_indices):
     """
@@ -85,7 +84,7 @@ def get_sort_key(data, severity, sort_option):
         alert_count = (data['grouped_alerts_indices']['severity'] == severity).sum()
         return -alert_count if sort_option == "Alert Count (Highest First)" else alert_count
 
-def display_alert_charts(alert_data, severity, sort_by, HTOL_name, selected_variable):
+def display_alert_charts(alert_data, severity, sort_by, HTOL_name, selected_variable, bands):
     """
     Displays the alert charts for a specific severity type with sorting options.
     """
@@ -100,10 +99,10 @@ def display_alert_charts(alert_data, severity, sort_by, HTOL_name, selected_vari
                 continue
             st.subheader(f"{file_name} (Low: {low_count}, Medium: {medium_count}, High: {high_count}, 3-Sigma: {sigma_count})")
             alerts_indices = data['grouped_alerts_indices']
-            visualise_time_series(data['df'], selected_variable, idle_bands, run_bands, alerts_indices, file_name)
+            visualise_time_series(data['df'], selected_variable, bands["idle_bands"], bands["run_bands"], alerts_indices, file_name)
 
-def alerting_system(HTOL_name, outlier_tolerance, grouping_time_window, anomaly_threshold, start_datetime, end_datetime, selected_variable):
-    alert_counts, alert_data = process_HTOL_data(HTOL_name, outlier_tolerance, grouping_time_window, anomaly_threshold, start_datetime, end_datetime, selected_variable)
+def alerting_system(HTOL_name, outlier_tolerance, grouping_time_window, anomaly_threshold, start_datetime, end_datetime, selected_variable, bands):
+    alert_counts, alert_data = process_HTOL_data(HTOL_name, outlier_tolerance, grouping_time_window, anomaly_threshold, start_datetime, end_datetime, selected_variable, bands)
     # Display alert summary
     st.subheader(f"Alert Summary for {HTOL_name}")
     col1, col2, col3, col4 = st.columns(4)
@@ -154,19 +153,19 @@ def alerting_system(HTOL_name, outlier_tolerance, grouping_time_window, anomaly_
     with col1:
         severity = "low"
         if st.session_state[graph_visible_title(HTOL_name, severity)]:
-            display_alert_charts(alert_data, severity, sort_by_low, HTOL_name, selected_variable)
+            display_alert_charts(alert_data, severity, sort_by_low, HTOL_name, selected_variable, bands)
     with col2:
         severity = "medium"
         if st.session_state[graph_visible_title(HTOL_name,severity)]:
-            display_alert_charts(alert_data, severity, sort_by_medium, HTOL_name, selected_variable)
+            display_alert_charts(alert_data, severity, sort_by_medium, HTOL_name, selected_variable, bands)
     with col3:
         severity = "high"
         if st.session_state[graph_visible_title(HTOL_name, severity)]:
-            display_alert_charts(alert_data, severity, sort_by_high, HTOL_name, selected_variable)
+            display_alert_charts(alert_data, severity, sort_by_high, HTOL_name, selected_variable, bands)
     with col4:
         severity = "3-sigma"
         if st.session_state[graph_visible_title(HTOL_name, severity)]:
-            display_alert_charts(alert_data, severity, sort_by_high, HTOL_name, selected_variable)
+            display_alert_charts(alert_data, severity, sort_by_high, HTOL_name, selected_variable, bands)
 
     # save_alert_data_to_csv(alert_data, HTOL_name, outlier_tolerance, grouping_time_window, anomaly_threshold, start_datetime, end_datetime)
 

@@ -3,6 +3,7 @@ import pandas as pd
 import streamlit as st
 from utils import date_time_range_selection
 from timeline import timeline
+from constants import load_threshold_values, threshold_inputs
 
 st.set_page_config(layout="wide")
 st.title("Alerting System Hyperparameters")
@@ -60,51 +61,54 @@ available_variables = df.columns.tolist()
 # Dropdown to select variable
 selected_variable = st.selectbox("Select Variable", available_variables, key="select_variable", index=available_variables.index("ChlPrs"))
 
+threshold_inputs(selected_variable)
+bands = load_threshold_values(selected_variable)
+
 def HTOL_09_content():
     HTOL = "HTOL-09"
-    alert_data, alert_counts = alerting_system(HTOL, outlier_tolerance, grouping_time_window, anomaly_threshold, start_datetime, end_datetime, selected_variable)
+    alert_data, alert_counts = alerting_system(HTOL, outlier_tolerance, grouping_time_window, anomaly_threshold, start_datetime, end_datetime, selected_variable, bands)
     total_data[HTOL] = { "alert_data": alert_data, "alert_counts": alert_counts}
     for key in aggregated_counts.keys():
         aggregated_counts[key] += alert_counts[key]
 
 def HTOL_10_content():
     HTOL = "HTOL-10"
-    alert_data, alert_counts = alerting_system(HTOL, outlier_tolerance, grouping_time_window, anomaly_threshold, start_datetime, end_datetime, selected_variable)
+    alert_data, alert_counts = alerting_system(HTOL, outlier_tolerance, grouping_time_window, anomaly_threshold, start_datetime, end_datetime, selected_variable, bands)
     total_data[HTOL] = { "alert_data": alert_data, "alert_counts": alert_counts}
     for key in aggregated_counts.keys():
         aggregated_counts[key] += alert_counts[key]
 
 def HTOL_11_content():
     HTOL = "HTOL-11"
-    alert_data, alert_counts = alerting_system(HTOL, outlier_tolerance, grouping_time_window, anomaly_threshold, start_datetime, end_datetime, selected_variable)
+    alert_data, alert_counts = alerting_system(HTOL, outlier_tolerance, grouping_time_window, anomaly_threshold, start_datetime, end_datetime, selected_variable, bands)
     total_data[HTOL] = { "alert_data": alert_data, "alert_counts": alert_counts}
     for key in aggregated_counts.keys():
         aggregated_counts[key] += alert_counts[key]
 
 def HTOL_12_content():
     HTOL = "HTOL-12"
-    alert_data, alert_counts = alerting_system(HTOL, outlier_tolerance, grouping_time_window, anomaly_threshold, start_datetime, end_datetime, selected_variable)
+    alert_data, alert_counts = alerting_system(HTOL, outlier_tolerance, grouping_time_window, anomaly_threshold, start_datetime, end_datetime, selected_variable, bands)
     total_data[HTOL] = { "alert_data": alert_data, "alert_counts": alert_counts}
     for key in aggregated_counts.keys():
         aggregated_counts[key] += alert_counts[key]
 
 def HTOL_13_content():
     HTOL = "HTOL-13"
-    alert_data, alert_counts = alerting_system(HTOL, outlier_tolerance, grouping_time_window, anomaly_threshold, start_datetime, end_datetime, selected_variable)
+    alert_data, alert_counts = alerting_system(HTOL, outlier_tolerance, grouping_time_window, anomaly_threshold, start_datetime, end_datetime, selected_variable, bands)
     total_data[HTOL] = { "alert_data": alert_data, "alert_counts": alert_counts}
     for key in aggregated_counts.keys():
         aggregated_counts[key] += alert_counts[key]
 
 def HTOL_14_content():
     HTOL = "HTOL-14"
-    alert_data, alert_counts = alerting_system(HTOL, outlier_tolerance, grouping_time_window, anomaly_threshold, start_datetime, end_datetime, selected_variable)
+    alert_data, alert_counts = alerting_system(HTOL, outlier_tolerance, grouping_time_window, anomaly_threshold, start_datetime, end_datetime, selected_variable, bands)
     total_data[HTOL] = { "alert_data": alert_data, "alert_counts": alert_counts}
     for key in aggregated_counts.keys():
         aggregated_counts[key] += alert_counts[key]
 
 def HTOL_15_content():
     HTOL = "HTOL-15"
-    alert_data, alert_counts = alerting_system(HTOL, outlier_tolerance, grouping_time_window, anomaly_threshold, start_datetime, end_datetime, selected_variable)
+    alert_data, alert_counts = alerting_system(HTOL, outlier_tolerance, grouping_time_window, anomaly_threshold, start_datetime, end_datetime, selected_variable, bands)
     total_data[HTOL] = { "alert_data": alert_data, "alert_counts": alert_counts}
     for key in aggregated_counts.keys():
         aggregated_counts[key] += alert_counts[key]
@@ -139,19 +143,19 @@ with Combined_HTOLs:
 
 with High_Severity_Timeline:
     severity = "high"
-    timeline(total_data, severity, selected_variable)
+    timeline(total_data, severity, selected_variable, bands)
 
 with Medium_Severity_Timeline:
     severity = "medium"
-    timeline(total_data, severity, selected_variable)
+    timeline(total_data, severity, selected_variable, bands)
 
 with Low_Severity_Timeline:
     severity = "low"
-    timeline(total_data, severity, selected_variable)
+    timeline(total_data, severity, selected_variable, bands)
 
 with Sigma_Severity_Timeline:
     severity = "3-sigma"
-    timeline(total_data, severity, selected_variable)
+    timeline(total_data, severity, selected_variable, bands)
 
 # with Cache_Management:
 #     cache_management()

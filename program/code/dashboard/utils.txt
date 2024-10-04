@@ -11,10 +11,9 @@ def extract_date(text):
     else:
         return None
 
-def hash_hyperparameters(outlier_tolerance, grouping_time_window, anomaly_threshold):
-    combined_str = f"{outlier_tolerance}_{type(outlier_tolerance).__name__}_{grouping_time_window}_{type(grouping_time_window).__name__}_{anomaly_threshold}_{type(anomaly_threshold).__name__}"
+def hash_hyperparameters(outlier_tolerance, grouping_time_window, anomaly_threshold, selected_variable):
+    combined_str = f"{outlier_tolerance}_{type(outlier_tolerance).__name__}_{grouping_time_window}_{type(grouping_time_window).__name__}_{anomaly_threshold}_{type(anomaly_threshold).__name__}_{selected_variable}_{type(selected_variable).__name__}"
     return hashlib.md5(combined_str.encode()).hexdigest()
-
 
 def date_time_range_selection():
     """
