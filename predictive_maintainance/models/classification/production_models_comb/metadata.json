@@ -1,0 +1,20 @@
+{
+    "model_types": [
+        "xgboost",
+        "randomforest"
+    ],
+    "alert_types": [
+        "LOW",
+        "MEDIUM",
+        "HIGH"
+    ],
+    "features": [
+        "ChlPrs",
+        "rolling_mean",
+        "rolling_std",
+        "time_since_LOW",
+        "time_since_MEDIUM",
+        "time_since_HIGH"
+    ],
+    "timestamp": "2024-11-02T19:37:32.489006"
+}
