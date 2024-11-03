@@ -481,7 +481,7 @@ def get_predictions_for_period(data: pd.DataFrame, predictor, window_size: timed
                 for alert_type in xgb_preds[machine_id]:
                     xgb_prob = xgb_preds[machine_id][alert_type]
                     rf_prob = rf_preds[machine_id][alert_type]
-                    avg_prob = rf_prob # (rf_prob + xgb_prob) / 2
+                    avg_prob = rf_prob if alert_type == "LOW" else xgb_prob if alert_type == "HIGH" else (rf_prob + xgb_prob) / 2
 
                     # Use the specific threshold for this alert type
                     if alert_type in threshold and avg_prob >= threshold[alert_type]:
@@ -693,7 +693,7 @@ except Exception as e:
 selected_machines = st.sidebar.multiselect(
     "Select Machines",
     options=list(data_dict.keys()),
-    default=list(data_dict.keys())[:3]
+    default=sorted(list(data_dict.keys()))
 )
 
 date_range = st.sidebar.date_input(
@@ -711,29 +711,29 @@ alert_threshold = {
         "LOW Alert Threshold",
         min_value=0.0,
         max_value=1.0,
-        value=0.75,  # Lower default for LOW alerts
-        step=0.05
+        value=0.75,
+        step=0.01
     ),
     'MEDIUM': st.sidebar.slider(
         "MEDIUM Alert Threshold",
         min_value=0.0,
         max_value=1.0,
-        value=0.6,  # Medium default for MEDIUM alerts
-        step=0.05
+        value=0.6,
+        step=0.01
     ),
     'HIGH': st.sidebar.slider(
         "HIGH Alert Threshold",
         min_value=0.0,
         max_value=1.0,
-        value=0.5,  # Higher default for HIGH alerts
-        step=0.05
+        value=0.6,
+        step=0.01
     ),
     'SIGMA': st.sidebar.slider(
         "SIGMA Alert Threshold",
         min_value=0.0,
         max_value=1.0,
-        value=0.95,  # Highest default for SIGMA alerts
-        step=0.05
+        value=0.95,
+        step=0.01
     )
 }
 
