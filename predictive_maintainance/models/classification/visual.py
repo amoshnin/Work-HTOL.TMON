@@ -29,8 +29,8 @@ from sklearn.model_selection import train_test_split
 import statistics
 from sklearn.metrics import classification_report, precision_recall_fscore_support
 
-main_data_path = "../../../outlier_tolerance=5_grouping_time_window=200_anomaly_threshold=6_start_date=2022-01-01_end_date=2026-01-01"
-main_model_path = "production_models_solo"
+main_data_path = "./data/outlier_tolerance=5_grouping_time_window=200_anomaly_threshold=6_start_date=2022-01-01_end_date=2026-01-01"
+main_model_path = "./data/production_models_solo"
 
 class AlertPredictor:
     def __init__(self, model_type='xgboost'):
