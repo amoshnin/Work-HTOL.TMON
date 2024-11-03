@@ -488,7 +488,7 @@ if 'loading_state' not in st.session_state:
 
 # Load data
 try:
-    data_path = st.sidebar.text_input("Data Directory Path", main_data_path)
+    data_path = main_data_path # st.sidebar.text_input("Data Directory Path", main_data_path)
     if not st.session_state['loading_state']['data_loaded']:
         with st.spinner("📂 Loading HTOL machine data..."):
             data_dict = load_data(data_path)
@@ -501,7 +501,7 @@ except Exception as e:
 
 # Load models
 try:
-    model_path = st.sidebar.text_input("Model Directory Path", main_model_path)
+    model_path = main_model_path # st.sidebar.text_input("Model Directory Path", main_model_path)
     if not st.session_state['loading_state']['models_loaded']:
         with st.spinner("🤖 Loading prediction models..."):
             predictor = load_models(model_path)
