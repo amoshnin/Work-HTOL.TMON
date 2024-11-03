@@ -4,6 +4,8 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import glob
 import os
+import altair as alt
+
 from datetime import datetime, timedelta
 from typing import Dict, List, Tuple
 import numpy as np
@@ -1055,26 +1057,42 @@ if selected_machines:
 
             # Alert Analysis
             if base_metrics['alert_breakdown'] is not None or base_metrics['pred_breakdown'] is not None:
-                st.subheader("Alert Breakdown")
+                st.subheader("Alert Breakdown - Actual vs Predicted")
 
-                # Combine the data into a single DataFrame for easier plotting
-                if base_metrics['alert_breakdown'] is not None and base_metrics['pred_breakdown'] is not None:
-                    df_actual = pd.DataFrame(base_metrics['alert_breakdown'], index=[0]).T.reset_index()
-                    df_actual.columns = ['Alert Type', 'Actual']
+                # Convert both breakdowns to DataFrames
+                actual_df = pd.DataFrame()
+                pred_df = pd.DataFrame()
 
-                    df_pred = pd.DataFrame(base_metrics['pred_breakdown'], index=[0]).T.reset_index()
-                    df_pred.columns = ['Alert Type', 'Predicted']
+                if base_metrics['alert_breakdown'] is not None:
+                    actual_df = pd.DataFrame(base_metrics['alert_breakdown'], columns=['count']).reset_index()
+                    actual_df.columns = ['alert_type', 'count']
+                    actual_df['category'] = 'Actual'
 
-                    df_combined = pd.merge(df_actual, df_pred, on='Alert Type')
-                    df_combined = df_combined.set_index('Alert Type')
+                if base_metrics['pred_breakdown'] is not None:
+                    pred_df = pd.DataFrame(base_metrics['pred_breakdown'], columns=['count']).reset_index()
+                    pred_df.columns = ['alert_type', 'count']
+                    pred_df['category'] = 'Predicted'
 
-                    st.bar_chart(df_combined)
+                # Combine the dataframes
+                combined_df = pd.concat([actual_df, pred_df], ignore_index=True)
 
-                else:  # Handle cases where only one of the breakdowns is available
-                    if base_metrics['alert_breakdown'] is not None:
-                        st.bar_chart(base_metrics['alert_breakdown'])
-                    if base_metrics['pred_breakdown'] is not None:
-                        st.bar_chart(base_metrics['pred_breakdown'])
+                if not combined_df.empty:
+                    # Create the combined chart using Altair
+                    chart = alt.Chart(combined_df).mark_bar().encode(
+                        x=alt.X('alert_type:N', title='Alert Type'),
+                        y=alt.Y('count:Q', title='Count'),
+                        color=alt.Color('category:N',
+                                    scale=alt.Scale(domain=['Actual', 'Predicted'],
+                                                    range=['#1f77b4', '#ff7f0e']),
+                                    title='Category'),
+                        xOffset='category:N'  # This creates the grouped bars
+                    ).properties(
+                        height=400,
+                        width=600
+                    )
+
+                    # Display the chart
+                    st.altair_chart(chart, use_container_width=True)
 
             st.markdown("---")
             # Update progress
