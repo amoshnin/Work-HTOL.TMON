@@ -7,6 +7,7 @@ import os
 from datetime import datetime, timedelta
 from typing import Dict, List, Tuple
 import numpy as np
+from scipy import stats
 
 import pandas as pd
 import numpy as np
@@ -411,6 +412,196 @@ def load_production_predictor(load_dir: str) -> ProductionAlertPredictor:
     production_predictor.load_models(load_dir)
     return production_predictor
 
+def calculate_advanced_metrics(df: pd.DataFrame, predictions_df: pd.DataFrame, window_size: timedelta = timedelta(hours=24)) -> dict:
+    """Calculate advanced metrics for machine performance analysis"""
+    metrics = {}
+
+    # Pressure Statistics
+    metrics['pressure_stats'] = {
+        'mean': df['ChlPrs'].mean(),
+        'std': df['ChlPrs'].std(),
+        'min': df['ChlPrs'].min(),
+        'max': df['ChlPrs'].max(),
+        'median': df['ChlPrs'].median(),
+        'skewness': stats.skew(df['ChlPrs']),
+        'kurtosis': stats.kurtosis(df['ChlPrs'])
+    }
+
+    # Alert Statistics
+    if 'ALERT' in df.columns:
+        metrics['alert_counts'] = df['ALERT'].value_counts().to_dict()
+        metrics['alert_intervals'] = {}
+        for alert_type in ['LOW', 'MEDIUM', 'HIGH']:
+            alert_times = df[df['ALERT'] == alert_type]['Time']
+            if len(alert_times) > 1:
+                intervals = np.diff(alert_times) / np.timedelta64(1, 'h')
+                metrics['alert_intervals'][alert_type] = {
+                    'mean': intervals.mean(),
+                    'std': intervals.std(),
+                    'min': intervals.min(),
+                    'max': intervals.max()
+                }
+
+    # Prediction Performance
+    if not predictions_df.empty:
+        metrics['prediction_stats'] = {
+            'total_predictions': len(predictions_df),
+            'unique_dates': predictions_df['Time'].nunique(),
+            'alert_type_distribution': predictions_df['alert_type'].value_counts().to_dict()
+        }
+
+        # Calculate prediction accuracy within time windows
+        true_positives = 0
+        false_positives = 0
+
+        for _, pred in predictions_df.iterrows():
+            window_start = pred['Time']
+            window_end = window_start + window_size
+            actual_alerts = df[(df['Time'] >= window_start) &
+                             (df['Time'] <= window_end) &
+                             (df['ALERT'] == pred['alert_type'])]
+
+            if len(actual_alerts) > 0:
+                true_positives += 1
+            else:
+                false_positives += 1
+
+        metrics['prediction_performance'] = {
+            'true_positives': true_positives,
+            'false_positives': false_positives,
+            'precision': true_positives / (true_positives + false_positives) if (true_positives + false_positives) > 0 else 0
+        }
+
+    return metrics
+
+def generate_advanced_visualizations(df: pd.DataFrame, predictions_df: pd.DataFrame, metrics: dict) -> dict:
+    """Generate additional visualizations for the dashboard"""
+    figs = {}
+
+    def update_mean_line(fig):
+        """Updates the mean line after the figure is rendered."""
+        max_y = fig.data[0].y.max()
+        fig.data[1].y = [0, max_y]
+
+    # 1. Pressure Distribution Plot
+    pressure_hist = go.Figure()
+
+    # Create histogram trace
+    hist_trace = go.Histogram(
+        x=df['ChlPrs'],
+        nbinsx=50,
+        name='Pressure Distribution',
+        marker_color='blue',
+        opacity=0.7
+    )
+    pressure_hist.add_trace(hist_trace)
+
+    # Calculate the y-max value manually
+    hist_data = np.histogram(df['ChlPrs'], bins=50)
+    y_max = max(hist_data[0])
+
+    # Add mean line with calculated y-max
+    pressure_hist.add_trace(go.Scatter(
+        x=[metrics['pressure_stats']['mean']] * 2,
+        y=[0, y_max],
+        mode='lines',
+        name='Mean',
+        line=dict(color='red', dash='dash')
+    ))
+
+    pressure_hist.update_layout(
+        title='Pressure Distribution',
+        xaxis_title='Pressure (ChlPrs)',
+        yaxis_title='Count',
+        showlegend=True
+    )
+    figs['pressure_distribution'] = pressure_hist
+
+    # 2. Alert Pattern Analysis
+    if 'ALERT' in df.columns:
+        alert_patterns = go.Figure()
+        for alert_type in ['LOW', 'MEDIUM', 'HIGH']:
+            alert_times = df[df['ALERT'] == alert_type]['Time']
+            alert_patterns.add_trace(go.Scatter(
+                x=alert_times,
+                y=[alert_type] * len(alert_times),
+                mode='markers',
+                name=f'{alert_type} Alerts',
+                marker=dict(
+                    size=10,
+                    symbol='star'
+                )
+            ))
+        alert_patterns.update_layout(
+            title='Alert Pattern Timeline',
+            xaxis_title='Time',
+            yaxis_title='Alert Type',
+            showlegend=True
+        )
+        figs['alert_patterns'] = alert_patterns
+
+    # 3. Prediction Performance Over Time
+    if not predictions_df.empty:
+        pred_performance = go.Figure()
+        for alert_type in ['LOW', 'MEDIUM', 'HIGH']:
+            type_preds = predictions_df[predictions_df['alert_type'] == alert_type]
+            pred_performance.add_trace(go.Scatter(
+                x=type_preds['Time'],
+                y=type_preds['probability'],
+                mode='markers+lines',
+                name=f'{alert_type} Predictions',
+                marker=dict(size=8)
+            ))
+        pred_performance.update_layout(
+            title='Prediction Probabilities Over Time',
+            xaxis_title='Time',
+            yaxis_title='Prediction Probability',
+            showlegend=True
+        )
+        figs['prediction_performance'] = pred_performance
+
+    return figs
+
+def generate_machine_dashboard(
+    machine_id: str,
+    df: pd.DataFrame,
+    date_range: tuple,
+    alert_threshold: float,
+    predictor
+) -> tuple:
+    """Generate comprehensive machine dashboard"""
+
+    if machine_id not in st.session_state['processed_machines'] or cache_changed:
+        with st.spinner(f"Processing data for {machine_id}..."):
+                # Generate visualization and cache it
+                main_fig, base_metrics, predictions_df = generate_machine_visualization(
+                    machine_id,
+                    data_dict[machine_id],
+                    date_range,
+                    alert_threshold,
+                    predictor
+                )
+
+                # Store in session state
+                st.session_state['processed_machines'].add(machine_id)
+    else:
+        # Retrieve from cache
+        main_fig, base_metrics, predictions_df = generate_machine_visualization(
+                machine_id,
+                data_dict[machine_id],
+                date_range,
+                alert_threshold,
+                predictor
+            )
+
+    # Calculate advanced metrics
+    advanced_metrics = calculate_advanced_metrics(df, predictions_df)
+
+    # Generate additional visualizations
+    additional_figs = generate_advanced_visualizations(df, predictions_df, advanced_metrics)
+
+    return main_fig, base_metrics, advanced_metrics, additional_figs, predictions_df
+
 # Page config
 st.set_page_config(page_title="HTOL Machine Monitor", layout="wide")
 
@@ -481,7 +672,7 @@ def get_predictions_for_period(data: pd.DataFrame, predictor, window_size: timed
                 for alert_type in xgb_preds[machine_id]:
                     xgb_prob = xgb_preds[machine_id][alert_type]
                     rf_prob = rf_preds[machine_id][alert_type]
-                    avg_prob = rf_prob if alert_type == "LOW" else xgb_prob if alert_type == "HIGH" else (rf_prob + xgb_prob) / 2
+                    avg_prob = rf_prob if alert_type == "LOW" else xgb_prob if (alert_type == "HIGH" or alert_type == "MEDIUM") else (rf_prob + xgb_prob) / 2
 
                     # Use the specific threshold for this alert type
                     if alert_type in threshold and avg_prob >= threshold[alert_type]:
@@ -646,9 +837,37 @@ def generate_machine_visualization(
         'average_pressure': df_filtered['ChlPrs'].mean(),
         'total_alerts': df_filtered['ALERT'].notna().sum(),
         'predicted_alerts': len(predictions_df[predictions_df['machine_id'] == machine_id]),
-        'alert_breakdown': df_filtered['ALERT'].value_counts() if df_filtered['ALERT'].notna().sum() > 0 else None,
-        'pred_breakdown': predictions_df[predictions_df['machine_id'] == machine_id]['alert_type'].value_counts() if not predictions_df.empty else None
+        'alert_breakdown': pd.DataFrame(),  # Initialize empty DataFrame for alert breakdowns
+        'pred_breakdown': pd.DataFrame()
     }
+
+    # Create alert breakdown DataFrames with consistent indices
+    alert_types = ['LOW', 'MEDIUM', 'HIGH']
+
+    # Actual alerts breakdown
+    if df_filtered['ALERT'].notna().sum() > 0:
+        actual_counts = df_filtered['ALERT'].value_counts()
+        metrics['alert_breakdown'] = pd.DataFrame(
+            index=alert_types,
+            data={'count': [actual_counts.get(alert_type, 0) for alert_type in alert_types]}
+        )
+
+    # Predicted alerts breakdown
+    if not predictions_df.empty:
+        pred_counts = predictions_df[predictions_df['machine_id'] == machine_id]['alert_type'].value_counts()
+        metrics['pred_breakdown'] = pd.DataFrame(
+            index=alert_types,
+            data={'count': [pred_counts.get(alert_type, 0) for alert_type in alert_types]}
+        )
+
+    # Find the maximum count across both actual and predicted alerts
+    max_count = max(
+        metrics['alert_breakdown']['count'].max() if not metrics['alert_breakdown'].empty else 0,
+        metrics['pred_breakdown']['count'].max() if not metrics['pred_breakdown'].empty else 0
+    )
+
+    # Add max_count to metrics for use in plotting
+    metrics['max_count'] = max_count if max_count > 0 else 1  # Use 1 as minimum to avoid empty charts
 
     return fig, metrics, predictions_df
 
@@ -768,25 +987,10 @@ if selected_machines:
         }
 
     for idx, machine_id in enumerate(selected_machines):
-        st.header(f"{machine_id} Monitoring")
+            st.header(f"{machine_id} Monitoring")
 
-        # Check if we need to process this machine
-        if machine_id not in st.session_state['processed_machines'] or cache_changed:
-            with st.spinner(f"Processing data for {machine_id}..."):
-                # Generate visualization and cache it
-                fig, metrics, predictions_df = generate_machine_visualization(
-                    machine_id,
-                    data_dict[machine_id],
-                    date_range,
-                    alert_threshold,
-                    predictor
-                )
-
-                # Store in session state
-                st.session_state['processed_machines'].add(machine_id)
-        else:
-            # Retrieve from cache
-            fig, metrics, predictions_df = generate_machine_visualization(
+            # Generate comprehensive dashboard
+            main_fig, base_metrics, advanced_metrics, additional_figs, predictions_df = generate_machine_dashboard(
                 machine_id,
                 data_dict[machine_id],
                 date_range,
@@ -794,49 +998,89 @@ if selected_machines:
                 predictor
             )
 
-        # Display visualization and metrics
-        st.plotly_chart(fig, use_container_width=True)
+            # Main visualization
+            st.plotly_chart(main_fig, use_container_width=True)
 
-        # Display statistics
-        col1, col2, col3 = st.columns(3)
+            # Key Performance Indicators
+            st.subheader("Key Performance Indicators")
+            col1, col2, col3, col4 = st.columns(4)
 
-        with col1:
-            st.metric(
-                "Average Pressure",
-                f"{metrics['average_pressure']:.2f}"
-            )
+            with col1:
+                st.metric(
+                    "Average Pressure",
+                    f"{advanced_metrics['pressure_stats']['mean']:.2f}",
+                    f"{advanced_metrics['pressure_stats']['std']:.2f} σ"
+                )
 
-        with col2:
-            st.metric(
-                "Total Alerts",
-                metrics['total_alerts']
-            )
+            with col2:
+                st.metric(
+                    "Total Alerts",
+                    base_metrics['total_alerts'],
+                    f"Predicted: {base_metrics['predicted_alerts']}"
+                )
 
-        with col3:
-            st.metric(
-                "Predicted Alerts",
-                metrics['predicted_alerts']
-            )
+            with col3:
+                if 'prediction_performance' in advanced_metrics:
+                    st.metric(
+                        "Prediction Precision",
+                        f"{advanced_metrics['prediction_performance']['precision']:.2%}"
+                    )
 
-        # Display alert breakdown
-        if metrics['alert_breakdown'] is not None or metrics['pred_breakdown'] is not None:
-            st.subheader("Alert Breakdown")
+            with col4:
+                st.metric(
+                    "Pressure Range",
+                    f"{advanced_metrics['pressure_stats']['max'] - advanced_metrics['pressure_stats']['min']:.2f}"
+                )
+
+            # Additional Visualizations
+            st.subheader("Advanced Analytics")
+
+            # Pressure Distribution
+            st.plotly_chart(additional_figs['pressure_distribution'], use_container_width=True)
+
+            # Alert Patterns and Predictions
             col1, col2 = st.columns(2)
 
             with col1:
-                if metrics['alert_breakdown'] is not None:
-                    st.subheader("Actual Alerts")
-                    st.bar_chart(metrics['alert_breakdown'])
+                if 'alert_patterns' in additional_figs:
+                    st.plotly_chart(additional_figs['alert_patterns'])
 
             with col2:
-                if metrics['pred_breakdown'] is not None:
-                    st.subheader("Predicted Alerts")
-                    st.bar_chart(metrics['pred_breakdown'])
+                if 'prediction_performance' in additional_figs:
+                    st.plotly_chart(additional_figs['prediction_performance'])
 
-        # Update progress
-        progress = (idx + 1) / len(selected_machines)
-        progress_bar.progress(progress)
-        st.info(f"{progress_text} ({idx + 1}/{len(selected_machines)} machines)")
+            # Detailed Statistics
+            with st.expander("Detailed Statistics"):
+                st.json(advanced_metrics)
+
+            # Alert Analysis
+            if base_metrics['alert_breakdown'] is not None or base_metrics['pred_breakdown'] is not None:
+                st.subheader("Alert Breakdown")
+
+                # Combine the data into a single DataFrame for easier plotting
+                if base_metrics['alert_breakdown'] is not None and base_metrics['pred_breakdown'] is not None:
+                    df_actual = pd.DataFrame(base_metrics['alert_breakdown'], index=[0]).T.reset_index()
+                    df_actual.columns = ['Alert Type', 'Actual']
+
+                    df_pred = pd.DataFrame(base_metrics['pred_breakdown'], index=[0]).T.reset_index()
+                    df_pred.columns = ['Alert Type', 'Predicted']
+
+                    df_combined = pd.merge(df_actual, df_pred, on='Alert Type')
+                    df_combined = df_combined.set_index('Alert Type')
+
+                    st.bar_chart(df_combined)
+
+                else:  # Handle cases where only one of the breakdowns is available
+                    if base_metrics['alert_breakdown'] is not None:
+                        st.bar_chart(base_metrics['alert_breakdown'])
+                    if base_metrics['pred_breakdown'] is not None:
+                        st.bar_chart(base_metrics['pred_breakdown'])
+
+            st.markdown("---")
+            # Update progress
+            progress = (idx + 1) / len(selected_machines)
+            progress_bar.progress(progress)
+            st.info(f"{progress_text} ({idx + 1}/{len(selected_machines)} machines)")
 
     progress_bar.empty()
     st.success("✅ Dashboard generation complete!")
