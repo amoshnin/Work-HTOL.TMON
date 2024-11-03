@@ -453,27 +453,204 @@ def load_models(model_path: str):
         st.success("✅ Models loaded successfully!")
         return predictor
 
-# Function to make predictions with progress indicator
-def get_predictions(data: pd.DataFrame, predictor, threshold: float = 0.7) -> Dict[str, List[Tuple[datetime, float]]]:
-    """Get predictions for each alert type"""
-    # Add machine_id column required by the predictor
-    data['machine_id'] = data['file_name'].str.extract(r'(HTOL-\d+)')
+def get_predictions_for_period(data: pd.DataFrame, predictor, window_size: timedelta = timedelta(hours=24), threshold: Dict[str, float] = None) -> pd.DataFrame:
+    """
+    Get predictions for chunks of data throughout the entire period with individual model probabilities
+    """
+    if threshold is None:
+        threshold = {alert_type: 0.7 for alert_type in ['LOW', 'MEDIUM', 'HIGH', 'SIGMA']}
 
-    with st.spinner("Generating predictions..."):
-        # Get predictions for both model types
-        xgb_preds = predictor.predict(data, model_type='xgboost')
-        rf_preds = predictor.predict(data, model_type='randomforest')
+    if 'machine_id' not in data.columns:
+        data['machine_id'] = data['file_name'].str.extract(r'(HTOL-\d+)')
 
-        # Combine predictions (average of both models)
-        predictions = {}
-        for machine_id in xgb_preds:
-            predictions[machine_id] = {}
-            for alert_type in xgb_preds[machine_id]:
-                avg_prob = (xgb_preds[machine_id][alert_type] + rf_preds[machine_id][alert_type]) / 2
-                if avg_prob >= threshold:
-                    predictions[machine_id][alert_type] = avg_prob
+    all_predictions = []
+    start_time = data['Time'].min()
+    end_time = data['Time'].max()
+    current_time = start_time
 
-    return predictions
+    while current_time <= end_time:
+        chunk_end = current_time + window_size
+        mask = (data['Time'] >= current_time) & (data['Time'] < chunk_end)
+        chunk_data = data[mask].copy()
+
+        if not chunk_data.empty:
+            xgb_preds = predictor.predict(chunk_data, model_type='xgboost')
+            rf_preds = predictor.predict(chunk_data, model_type='randomforest')
+
+            for machine_id in xgb_preds:
+                for alert_type in xgb_preds[machine_id]:
+                    xgb_prob = xgb_preds[machine_id][alert_type]
+                    rf_prob = rf_preds[machine_id][alert_type]
+                    avg_prob = rf_prob # (rf_prob + xgb_prob) / 2
+
+                    # Use the specific threshold for this alert type
+                    if alert_type in threshold and avg_prob >= threshold[alert_type]:
+                        all_predictions.append({
+                            'Time': current_time,
+                            'machine_id': machine_id,
+                            'alert_type': alert_type,
+                            'probability': avg_prob,
+                            'xgb_probability': xgb_prob,
+                            'rf_probability': rf_prob
+                        })
+
+        current_time = chunk_end
+
+    if all_predictions:
+        return pd.DataFrame(all_predictions)
+    return pd.DataFrame(columns=['Time', 'machine_id', 'alert_type', 'probability', 'xgb_probability', 'rf_probability'])
+
+@st.cache_data
+def generate_machine_visualization(
+    machine_id: str,
+    df: pd.DataFrame,
+    date_range: tuple,
+    alert_threshold: float,
+    _predictor
+) -> tuple:
+    """
+    Generate enhanced visualization with clearer markers and model probabilities
+    """
+    mask = (df['Time'].dt.date >= date_range[0]) & (df['Time'].dt.date <= date_range[1])
+    df_filtered = df[mask]
+
+    fig = make_subplots(specs=[[{"secondary_y": True}]])
+
+    # Add ChlPrs line
+    fig.add_trace(
+        go.Scatter(
+            x=df_filtered['Time'],
+            y=df_filtered['ChlPrs'],
+            name="ChlPrs",
+            line=dict(color='blue', width=1)
+        ),
+        secondary_y=False
+    )
+
+    # Enhanced actual alerts with outline
+    alert_colors = {
+        'LOW': {'color': 'yellow', 'outline': 'black'},
+        'MEDIUM': {'color': 'orange', 'outline': 'black'},
+        'HIGH': {'color': 'red', 'outline': 'black'}
+    }
+
+    for alert_type, colors in alert_colors.items():
+        alert_points = df_filtered[df_filtered['ALERT'] == alert_type]
+        if not alert_points.empty:
+            fig.add_trace(
+                go.Scatter(
+                    x=alert_points['Time'],
+                    y=alert_points['ChlPrs'],
+                    mode='markers',
+                    name=f'Actual {alert_type} Alert',
+                    marker=dict(
+                        color=colors['color'],
+                        size=15,
+                        symbol='star',
+                        line=dict(
+                            color=colors['outline'],
+                            width=2
+                        )
+                    ),
+                    hovertemplate=(
+                        f"<b>Actual {alert_type} Alert</b><br>" +
+                        "Time: %{x}<br>" +
+                        "Pressure: %{y:.2f}<br>" +
+                        "<extra></extra>"
+                    )
+                ),
+                secondary_y=False
+            )
+
+    # Get predictions with model probabilities
+    predictions_df = get_predictions_for_period(
+        df_filtered,
+        _predictor,
+        window_size=timedelta(hours=24),
+        threshold=alert_threshold
+    )
+
+    # Enhanced predicted alerts with outline and probability information
+    if not predictions_df.empty:
+        for alert_type, colors in alert_colors.items():
+            alert_predictions = predictions_df[predictions_df['alert_type'] == alert_type]
+            if not alert_predictions.empty:
+                pred_pressure = pd.merge_asof(
+                    alert_predictions,
+                    df_filtered[['Time', 'ChlPrs']],
+                    on='Time',
+                    direction='nearest'
+                )
+
+                fig.add_trace(
+                    go.Scatter(
+                        x=pred_pressure['Time'],
+                        y=pred_pressure['ChlPrs'],
+                        mode='markers',
+                        name=f'Predicted {alert_type} Alert',
+                        marker=dict(
+                            color=colors['color'],
+                            size=18,
+                            symbol='diamond',
+                            opacity=0.9,
+                            line=dict(
+                                color=colors['outline'],
+                                width=2
+                            )
+                        ),
+                        hovertemplate=(
+                            f"<b>Predicted {alert_type} Alert</b><br>" +
+                            "Time: %{x}<br>" +
+                            "Pressure: %{y:.2f}<br>" +
+                            "XGBoost Probability: %{customdata[0]:.3f}<br>" +
+                            "Random Forest Probability: %{customdata[1]:.3f}<br>" +
+                            "Average Probability: %{customdata[2]:.3f}<br>" +
+                            "<extra></extra>"
+                        ),
+                        customdata=np.column_stack((
+                            pred_pressure['xgb_probability'],
+                            pred_pressure['rf_probability'],
+                            pred_pressure['probability']
+                        ))
+                    ),
+                    secondary_y=False
+                )
+
+    # Update layout with enhanced legend and hover mode
+    fig.update_layout(
+        title=f"{machine_id} Pressure and Alerts Over Time",
+        xaxis_title="Time",
+        yaxis_title="Pressure (ChlPrs)",
+        height=600,
+        showlegend=True,
+        hovermode='x unified',
+        legend=dict(
+            yanchor="top",
+            y=0.99,
+            xanchor="left",
+            x=0.01,
+            bgcolor="rgba(255, 255, 255, 0.8)",
+            bordercolor="Black",
+            borderwidth=1
+        ),
+        plot_bgcolor='white',
+        paper_bgcolor='white'
+    )
+
+    # Add grid for better readability
+    fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor='LightGray')
+    fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor='LightGray')
+
+    # Calculate metrics
+    metrics = {
+        'average_pressure': df_filtered['ChlPrs'].mean(),
+        'total_alerts': df_filtered['ALERT'].notna().sum(),
+        'predicted_alerts': len(predictions_df[predictions_df['machine_id'] == machine_id]),
+        'alert_breakdown': df_filtered['ALERT'].value_counts() if df_filtered['ALERT'].notna().sum() > 0 else None,
+        'pred_breakdown': predictions_df[predictions_df['machine_id'] == machine_id]['alert_type'].value_counts() if not predictions_df.empty else None
+    }
+
+    return fig, metrics, predictions_df
 
 # Main app
 st.title("HTOL Machine Monitoring Dashboard")
@@ -516,7 +693,7 @@ except Exception as e:
 selected_machines = st.sidebar.multiselect(
     "Select Machines",
     options=list(data_dict.keys()),
-    default=list(data_dict.keys())[:2]
+    default=list(data_dict.keys())[:3]
 )
 
 date_range = st.sidebar.date_input(
@@ -527,124 +704,134 @@ date_range = st.sidebar.date_input(
     )
 )
 
-alert_threshold = st.sidebar.slider(
-    "Alert Prediction Threshold",
-    min_value=0.0,
-    max_value=1.0,
-    value=0.7,
-    step=0.05
-)
+# Replace single alert threshold with separate threshold for each alert type
+st.sidebar.subheader("Alert Prediction Thresholds")
+alert_threshold = {
+    'LOW': st.sidebar.slider(
+        "LOW Alert Threshold",
+        min_value=0.0,
+        max_value=1.0,
+        value=0.75,  # Lower default for LOW alerts
+        step=0.05
+    ),
+    'MEDIUM': st.sidebar.slider(
+        "MEDIUM Alert Threshold",
+        min_value=0.0,
+        max_value=1.0,
+        value=0.6,  # Medium default for MEDIUM alerts
+        step=0.05
+    ),
+    'HIGH': st.sidebar.slider(
+        "HIGH Alert Threshold",
+        min_value=0.0,
+        max_value=1.0,
+        value=0.5,  # Higher default for HIGH alerts
+        step=0.05
+    ),
+    'SIGMA': st.sidebar.slider(
+        "SIGMA Alert Threshold",
+        min_value=0.0,
+        max_value=1.0,
+        value=0.95,  # Highest default for SIGMA alerts
+        step=0.05
+    )
+}
 
-# Create plots with progress tracking
 if selected_machines:
     progress_text = "Generating visualizations..."
     progress_bar = st.progress(0)
     st.info(progress_text)
 
+    # Track which machines have been processed
+    if 'processed_machines' not in st.session_state:
+        st.session_state['processed_machines'] = set()
+
+    # Track visualization cache parameters
+    if 'cache_params' not in st.session_state:
+        st.session_state['cache_params'] = {
+            'date_range': date_range,
+            'alert_threshold': alert_threshold
+        }
+
+    # Check if cache parameters have changed
+    cache_changed = (
+        st.session_state['cache_params']['date_range'] != date_range or
+        st.session_state['cache_params']['alert_threshold'] != alert_threshold
+    )
+
+    if cache_changed:
+        # Clear cache if parameters changed
+        st.session_state['processed_machines'].clear()
+        st.session_state['cache_params'] = {
+            'date_range': date_range,
+            'alert_threshold': alert_threshold
+        }
+
     for idx, machine_id in enumerate(selected_machines):
         st.header(f"{machine_id} Monitoring")
 
-        df = data_dict[machine_id]
+        # Check if we need to process this machine
+        if machine_id not in st.session_state['processed_machines'] or cache_changed:
+            with st.spinner(f"Processing data for {machine_id}..."):
+                # Generate visualization and cache it
+                fig, metrics, predictions_df = generate_machine_visualization(
+                    machine_id,
+                    data_dict[machine_id],
+                    date_range,
+                    alert_threshold,
+                    predictor
+                )
 
-        # Filter by date range
-        mask = (df['Time'].dt.date >= date_range[0]) & (df['Time'].dt.date <= date_range[1])
-        df_filtered = df[mask]
-
-        with st.spinner(f"Processing data for {machine_id}..."):
-            # Create figure with secondary y-axis
-            fig = make_subplots(specs=[[{"secondary_y": True}]])
-
-            # Add ChlPrs line
-            fig.add_trace(
-                go.Scatter(
-                    x=df_filtered['Time'],
-                    y=df_filtered['ChlPrs'],
-                    name="ChlPrs",
-                    line=dict(color='blue')
-                ),
-                secondary_y=False
+                # Store in session state
+                st.session_state['processed_machines'].add(machine_id)
+        else:
+            # Retrieve from cache
+            fig, metrics, predictions_df = generate_machine_visualization(
+                machine_id,
+                data_dict[machine_id],
+                date_range,
+                alert_threshold,
+                predictor
             )
 
-            # Add actual alerts
-            alert_colors = {'LOW': 'yellow', 'MEDIUM': 'orange', 'HIGH': 'red'}
-            for alert_type, color in alert_colors.items():
-                alert_points = df_filtered[df_filtered['ALERT'] == alert_type]
-                if not alert_points.empty:
-                    fig.add_trace(
-                        go.Scatter(
-                            x=alert_points['Time'],
-                            y=alert_points['ChlPrs'],
-                            mode='markers',
-                            name=f'Actual {alert_type} Alert',
-                            marker=dict(
-                                color=color,
-                                size=12,
-                                symbol='star'
-                            )
-                        ),
-                        secondary_y=False
-                    )
+        # Display visualization and metrics
+        st.plotly_chart(fig, use_container_width=True)
 
-            # Add predictions
-            predictions = get_predictions(df_filtered, predictor, alert_threshold)
-            if machine_id in predictions:
-                for alert_type, prob in predictions[machine_id].items():
-                    fig.add_trace(
-                        go.Scatter(
-                            x=[df_filtered['Time'].iloc[-1]],
-                            y=[df_filtered['ChlPrs'].iloc[-1]],
-                            mode='markers',
-                            name=f'Predicted {alert_type} Alert (p={prob:.2f})',
-                            marker=dict(
-                                color=alert_colors[alert_type],
-                                size=15,
-                                symbol='diamond'
-                            )
-                        ),
-                        secondary_y=False
-                    )
+        # Display statistics
+        col1, col2, col3 = st.columns(3)
 
-            # Update layout
-            fig.update_layout(
-                title=f"{machine_id} Pressure and Alerts Over Time",
-                xaxis_title="Time",
-                yaxis_title="Pressure (ChlPrs)",
-                height=600,
-                showlegend=True,
-                hovermode='x unified'
+        with col1:
+            st.metric(
+                "Average Pressure",
+                f"{metrics['average_pressure']:.2f}"
             )
 
-            # Display plot
-            st.plotly_chart(fig, use_container_width=True)
+        with col2:
+            st.metric(
+                "Total Alerts",
+                metrics['total_alerts']
+            )
 
-            # Display statistics
-            col1, col2, col3 = st.columns(3)
+        with col3:
+            st.metric(
+                "Predicted Alerts",
+                metrics['predicted_alerts']
+            )
+
+        # Display alert breakdown
+        if metrics['alert_breakdown'] is not None or metrics['pred_breakdown'] is not None:
+            st.subheader("Alert Breakdown")
+            col1, col2 = st.columns(2)
 
             with col1:
-                st.metric(
-                    "Average Pressure",
-                    f"{df_filtered['ChlPrs'].mean():.2f}"
-                )
+                if metrics['alert_breakdown'] is not None:
+                    st.subheader("Actual Alerts")
+                    st.bar_chart(metrics['alert_breakdown'])
 
             with col2:
-                alert_count = df_filtered['ALERT'].notna().sum()
-                st.metric(
-                    "Total Alerts",
-                    alert_count
-                )
-
-            with col3:
-                predicted_alerts = sum(len(alerts) for machine, alerts in predictions.items() if machine == machine_id)
-                st.metric(
-                    "Predicted Alerts",
-                    predicted_alerts
-                )
-
-            # Display alert breakdown
-            if alert_count > 0:
-                st.subheader("Alert Breakdown")
-                alert_breakdown = df_filtered['ALERT'].value_counts()
-                st.bar_chart(alert_breakdown)
+                if metrics['pred_breakdown'] is not None:
+                    st.subheader("Predicted Alerts")
+                    st.bar_chart(metrics['pred_breakdown'])
 
         # Update progress
         progress = (idx + 1) / len(selected_machines)
